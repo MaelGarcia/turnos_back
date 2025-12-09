@@ -4,6 +4,7 @@ import { query } from '../../db/config';
 import { AuthRequest } from '~/middlewares/authMiddleware';
 import axios from 'axios'
 import { log } from 'console';
+import { getIO } from '~/tools/socket';
 
 
 const BOT_URL = process.env.BOT_URL;
@@ -75,9 +76,10 @@ export async function getModulosAsignados(req: Request, res: Response) {
     console.log("Aqui entro",id_login);
     try {
         const result = await query(
-            `SELECT m.id_modulos, m.codigo_modulo, m.descripcion, m.id_sucursal
+            `SELECT m.id_modulos, m.codigo_modulo, m.descripcion, m.id_sucursal, s.nombre
              FROM login_modulo lm
              JOIN modulos m ON lm.id_modulos = m.id_modulos
+             JOIN sucursal s ON m.id_sucursal = s.id_sucursal
              WHERE lm.id_login = $1
              AND lm.estado_act_dato = TRUE`,
             [id_login]
@@ -121,8 +123,7 @@ export async function turno_finalizar(req: Request, res: Response) {
     `;
 
     const { rows } = await query(sql, [idTurno]);
-    console.log("Dato para finalizar tunro",rows);
-    
+      
     if (rows.length === 0) {
       // o no existe, o no estaba en estado "atendiendo"
       return res.status(409).json({
@@ -131,6 +132,23 @@ export async function turno_finalizar(req: Request, res: Response) {
     }
 
     const turno = rows[0];
+
+    try {
+          const io = getIO();    
+    
+          console.log("Estoy finalizado")
+          io.emit('turno_estado', {
+                id_sucursal: turno.id_sucursal,
+                id_turnos: turno.id_turnos,
+                numero_turno: turno.numero_turno,
+                codigo_seguridad: turno.codigo_seguridad,
+                estado: 'finalizado',
+              });
+        
+         
+    }catch(error){
+      console.error('Error emitiendo socket:', error);
+    }
 
     // Enviar WhatsApp de finalización (si tenemos celular)
     if (turno.celular) {

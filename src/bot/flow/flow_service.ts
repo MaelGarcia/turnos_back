@@ -1,14 +1,13 @@
 import { addKeyword } from '@builderbot/bot'
 import { greetByTime, EMO, pick, say } from '../../tools/humanize'
-import { validarRFC, validarCURP } from '../../tools/tools'
+import { validarCURP,startCurpTimer, resetCurpTimer, stopCurpTimer } from '../../tools/tools'
 import { registrarInteraccion, generarTurno, verificarTurnoHoy } from '../../db/coneccion_wbd'
 import { query } from '../../db/config'
-/* import { io } from 'socket.io-client'; */
 
 const TABLE_SUCURSAL = process.env.TABLE_SUCURSALES
 const URL_COSTOS = process.env.URL_COSTOS
-/* const SERVICE_API = `http://localhost:${process.env.EXPRESS_PORT}`
-const socket = io(SERVICE_API); */
+const TIME_EXCEEDED = Number(process.env.TIME_EXCEEDED) || 60_000
+
 
 export const flowRespuestaLicencias = addKeyword(['1', '2', '3', '0', 'TURNO']).addAnswer(
   '',
@@ -20,7 +19,6 @@ export const flowRespuestaLicencias = addKeyword(['1', '2', '3', '0', 'TURNO']).
   }
 )
 
-// Costos: la propia librería ya maneja el envío, aquí no hace falta lógica extra
 export const flowCostos = addKeyword(['2', 'dos', 'COSTO', 'COSTOS', 'costo', 'costos']).addAnswer(
   ['🙌 Estos son los costos y requisitos actualizados'],
   {
@@ -31,8 +29,10 @@ export const flowCostos = addKeyword(['2', 'dos', 'COSTO', 'COSTOS', 'costo', 'c
   []
 )
 
+/* FUNCIONAL 7/12/2025 
+
 export const flowTurno = addKeyword(['1', 'uno', 'TURNO', 'turno', 'TURNOS', 'turnos']).addAnswer(
-  'MUY BIEN. ENVÍA TU RFC (13 caracteres, sin espacios).',
+  'MUY BIEN. ENVÍA TU CURP (18 caracteres, sin espacios).',
   { capture: true },
   async (ctx, { state, flowDynamic, fallBack }) => {
     const entrada = ctx.body
@@ -42,7 +42,7 @@ export const flowTurno = addKeyword(['1', 'uno', 'TURNO', 'turno', 'TURNOS', 'tu
     let celular = ''
     let sucursal: string | undefined
 
-    // RFC inválido
+    // CURP inválido
     if (!res.ok) {
       await say(ctx, flowDynamic, '❌ Inténtalo de nuevo. Envía solo tu CURP.')
       return fallBack()
@@ -97,7 +97,129 @@ export const flowTurno = addKeyword(['1', 'uno', 'TURNO', 'turno', 'TURNOS', 'tu
     }
   },
   []
-)
+) */
+// asumo que tienes say(...) ya definido
+
+export const flowTurno = addKeyword(['1', 'uno', 'TURNO', 'turno', 'TURNOS', 'turnos'])
+  // Al entrar al flujo inicializamos contador e iniciamos timer de inactividad
+  .addAction(async (ctx, { state, flowDynamic, endFlow }) => {
+    await state.update({
+      curpIntentos: 0,
+    })
+    // 60_000 ms = 1 minuto
+    startCurpTimer(ctx, flowDynamic, endFlow, TIME_EXCEEDED)
+  })
+  .addAnswer(
+    'MUY BIEN. ENVÍA TU CURP (18 caracteres, sin espacios).',
+    { capture: true },
+    async (ctx, { state, flowDynamic, fallBack, endFlow }) => {
+      const entrada = (ctx.body || '').trim().toUpperCase();
+
+      // Cada mensaje que llega mientras estamos aquí REINICIA el timer de inactividad
+      resetCurpTimer(ctx, flowDynamic, endFlow, TIME_EXCEEDED);
+
+      // -------- Validar CURP --------
+      const res = validarCURP(entrada)
+
+      if (!res.ok) {
+        const myState = (await state.getMyState()) ?? {}
+        const intentosPrevios = myState.curpIntentos ?? 0
+        const intentos = intentosPrevios + 1
+
+        await state.update({ curpIntentos: intentos })
+
+        // 3 intentos fallidos → cerramos conversación
+        if (intentos >= 3) {
+          stopCurpTimer(ctx) // ya no estamos esperando CURP
+          await say(
+            ctx,
+            flowDynamic,
+            '❌ Has superado el número de intentos permitidos para ingresar la CURP.\n' +
+              'Se cierra la conversación. Si necesitas intentarlo nuevamente, favor de escanear el *QR* de sucursal'
+          )
+          return endFlow()
+        }
+
+        await say(ctx, flowDynamic, '❌ Inténtalo de nuevo. Envía solo tu CURP.')
+        return fallBack()
+      }
+
+      // CURP válida → detenemos timer e intentos
+      stopCurpTimer(ctx)
+      await state.update({ curpIntentos: 0 })
+
+      // ---- Lógica original de generación de turno ----
+      let curp = ''
+      let nombre = ''
+      let celular = ''
+      let sucursal: number | undefined // ajusta al tipo real que uses
+
+      await say(ctx, flowDynamic, `✅ CURP VÁLIDO: ${res.curp}`)
+      await say(ctx, flowDynamic, `⏳ Verificando disponibilidad de TURNO ...`)
+
+      try {
+        const myState = (await state.getMyState()) ?? {}
+        const rawIdSucursal = myState.id_sucursal as number | string | undefined
+
+        // Normalizar a number por si viene como string
+        const id_sucursal =
+          typeof rawIdSucursal === 'string' ? Number(rawIdSucursal) : rawIdSucursal
+
+        if (!id_sucursal || Number.isNaN(id_sucursal)) {
+          await say(
+            ctx,
+            flowDynamic,
+            '⚠️ No se encontró una sucursal válida para generar tu turno. Intenta nuevamente seleccionando sucursal.'
+          )
+          return endFlow()
+        }
+
+        curp = res.curp!
+        nombre = ctx.pushName || ctx.notifyName || 'SIN_NOMBRE'
+        celular = ctx.from
+        sucursal = id_sucursal
+
+        const id_registro = await registrarInteraccion({ curp, nombre, celular })
+        const turno = await generarTurno({ id_registro, id_sucursal, celular })
+
+        await say(ctx, flowDynamic, `📋 Se ha generado tu turno:`)
+        await say(
+          ctx,
+          flowDynamic,
+          `🏷️ Turno: ${turno.numero_turno}\n` +
+            `🔐 Código: ${turno.codigo_seguridad}\n` +
+            `🏢 Sucursal: ${turno.sucursal}\n` +
+            `⏳ Tiempo estimado: ${turno.tiempoEstimado}`
+        )
+      } catch (err: any) {
+        // restricción: un solo turno por día
+        if (err.code === '23505' && err.constraint === 'ix_turnos_uno_por_dia') {
+          const t = await verificarTurnoHoy(celular)
+          if (t) {
+            await say(
+              ctx,
+              flowDynamic,
+              '📅 Ya tienes un turno asignado hoy, desde este dispositivo.'
+            )
+            return
+          }
+          await say(ctx, flowDynamic, '📅 Ya tienes un turno asignado hoy.')
+          return
+        }
+
+        console.error('Error en flowTurno:', err)
+        await say(
+          ctx,
+          flowDynamic,
+          '⚠️ Ocurrió un error al generar tu turno. Por favor, intenta de nuevo más tarde.'
+        )
+        return
+      }
+    },
+    []
+  )
+
+
 
 export const flowLicencias = addKeyword(['1', 'licencia', 'licencias'])
   .addAnswer(['¿Qué servicio de Licencias necesitas?'])
@@ -119,7 +241,7 @@ export const flowLicencias = addKeyword(['1', 'licencia', 'licencias'])
       return fallBack()
     },
     [flowTurno, flowCostos]
-  )
+)
 
 export const flowPlacas = addKeyword(['2', 'placa', 'placas']).addAnswer([
   '🚧 En construcción ...',

@@ -195,3 +195,38 @@ export async function verificarTurnoHoy(celular: string): Promise<TurnoHoy | nul
     return null
   }
 }
+
+
+/* export async function obtenerHorarioTurno() {
+  const sql = `
+    SELECT 
+      hora_inicio,
+      hora_fin,
+      (NOW()::time BETWEEN hora_inicio AND hora_fin) AS dentro_horario
+    FROM public.gestion_proyectos_config
+    WHERE est_actual_dato = TRUE
+    ORDER BY fecha_creacion DESC
+    LIMIT 1
+  `
+
+  const { rows } = await query(sqll)
+
+  if (!rows.length) {
+    return {
+      existeConfig: false,
+      dentroHorario: false,
+      horaInicio: null,
+      horaFin: null
+    }
+  }
+
+  const row = rows[0]
+
+  return {
+    existeConfig: true,
+    dentroHorario: row.dentro_horario,
+
+    horaInicio: row.hora_inicio,
+    horaFin: row.hora_fin
+  }
+} */

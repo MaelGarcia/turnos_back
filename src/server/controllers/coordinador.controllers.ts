@@ -445,20 +445,52 @@ export async function turno_update_estado(req: Request, res: Response) {
     try {
       const io = getIO();
       const room = `sucursal-${turno.id_sucursal}_modulo-${turno.codigo_modulo}`;
+      console.log("Estado normaliza test",estadoNormalizado);
       
-      io.to(room).emit('turnoAsignado', {
-        id_turnos: turno.id_turnos,
-        numero_turno: turno.numero_turno,
-        codigo_seguridad: turno.codigo_seguridad,
-        estado: turno.estado,
-        id_sucursal: turno.id_sucursal,
-        id_modulos: turno.id_modulos,
-        id_login: turno.id_login,
-        codigo_modulo: turno.codigo_modulo,
-        hora_llamado: turno.hora_llamado
-      });
+  // 1) Evento genérico: se emite SIEMPRE, sin importar el estado
+    if (estadoNormalizado === 'atendiendo') {
+      console.log("Estoy atendiendo")
+      io.emit('turno_estado', {
+            id_sucursal: turno.id_sucursal,
+            id_turnos: turno.id_turnos,
+            numero_turno: turno.numero_turno,
+            codigo_seguridad: turno.codigo_seguridad,
+            estado: 'atendiendo',
+          });
+    }
 
-      console.log(`[SOCKET] Emitido turno a ${room}`);
+    if (estadoNormalizado === 'finalizado') {
+      console.log("Estoy finalizado")
+      io.emit('turno_estado', {
+            id_sucursal: turno.id_sucursal,
+            id_turnos: turno.id_turnos,
+            numero_turno: turno.numero_turno,
+            codigo_seguridad: turno.codigo_seguridad,
+            estado: 'finalizado',
+          });
+    }
+      
+
+  // 2) Evento especial SOLO cuando es "asignado" (lo que ya te funciona)
+  if (estadoNormalizado === 'asignado') {
+    console.log("Estoy asignando");
+    
+    io.to(room).emit('turnoAsignado', {
+      id_turnos: turno.id_turnos,
+      numero_turno: turno.numero_turno,
+      codigo_seguridad: turno.codigo_seguridad,
+      estado: turno.estado,
+      id_sucursal: turno.id_sucursal,
+      id_modulos: turno.id_modulos,
+      id_login: turno.id_login,
+      codigo_modulo: turno.codigo_modulo,
+      hora_llamado: turno.hora_llamado,
+    });
+
+    console.log(`[SOCKET] Emitido turnoAsignado a ${room}`);
+  }
+
+  console.log(`[SOCKET] Emitido turno_estado (${turno.estado}) a ${room}`);
     } catch (error) {
       console.error('Error emitiendo socket:', error);
     }

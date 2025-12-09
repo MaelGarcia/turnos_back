@@ -188,7 +188,7 @@ export async function crearUsuario(req: Request, res: Response) {
       return res.status(400).json({ message: 'usuario, correo y rol son requeridos' });
     }
 
-    const contrasena_plana = password_manual || 'Temporal123!';
+    const contrasena_plana = password_manual || 't3mp0r4l';
     const contrasena_hash = contrasena_plana; // aquí iría bcrypt.hash(...)
 
     await query('BEGIN');
@@ -465,7 +465,7 @@ export async function obtenerModulosPorSucursal(req: Request, res: Response) {
 }
 
 
-export async function guardarSucursales(req: Request, res: Response) {
+/* export async function guardarSucursales(req: Request, res: Response) {
     try {
         const { id_sucursal, codigo, nombre, direccion } = req.body;
 
@@ -521,7 +521,72 @@ export async function guardarSucursales(req: Request, res: Response) {
             error: "Error guardando sucursal."
         });
     }
+} */
+export async function guardarSucursales(req: Request, res: Response) {
+    try {
+        const {
+            id_sucursal,
+            codigo,
+            nombre,
+            direccion,
+            estatus = 'DISPONIBLE' // por defecto si no lo mandan
+        } = req.body;
+
+        // Validaciones simples
+        if (!codigo || !nombre) {
+            return res.status(400).json({ error: "Código y nombre son obligatorios." });
+        }
+
+        let sql: string;
+        let params: any[];
+
+        if (id_sucursal) {
+            // 🔄 UPDATE
+            sql = `
+                UPDATE sucursal
+                SET codigo   = $1,
+                    nombre   = $2,
+                    direccion= $3,
+                    estatus  = $4
+                WHERE id_sucursal = $5
+                RETURNING *;
+            `;
+            params = [codigo, nombre, direccion, estatus, id_sucursal];
+
+        } else {
+            // ➕ INSERT
+            sql = `
+                INSERT INTO sucursal (codigo, nombre, direccion, estatus)
+                VALUES ($1, $2, $3, $4)
+                RETURNING *;
+            `;
+            params = [codigo, nombre, direccion, estatus];
+        }
+
+        const result = await query(sql, params);
+
+        res.json({
+            ok: true,
+            message: id_sucursal ? "Sucursal actualizada." : "Sucursal creada.",
+            data: result.rows[0]
+        });
+
+    } catch (error: any) {
+        console.error("Error guardando sucursal:", error);
+
+        // Manejo de error de código duplicado
+        if (error.code === "23505") {
+            return res.status(400).json({
+                error: "El código de sucursal ya existe. Debe ser único."
+            });
+        }
+
+        res.status(500).json({
+            error: "Error guardando sucursal."
+        });
+    }
 }
+
 
 export async function eliminarSucursal(req: Request, res: Response) { 
   

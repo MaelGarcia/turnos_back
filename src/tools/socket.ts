@@ -12,7 +12,6 @@ export function initSocket(server: any) {
       console.log('[SOCKET] joinRoom recibido ->', room, 'desde socket:', socket.id);
       socket.join(room);
       console.log('[SOCKET] Salas del socket ahora:', Array.from(socket.rooms));
-      // rooms típicamente: [ socket.id, 'sucursal-1_modulo-M01' ]
     });
 
     socket.on('disconnect', () => {
