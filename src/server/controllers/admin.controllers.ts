@@ -4,6 +4,7 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { getIO } from '~/tools/socket';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -464,6 +465,28 @@ export async function obtenerModulosPorSucursal(req: Request, res: Response) {
     }
 }
 
+export async function obtenerUsuarioPorModulos(req: Request, res: Response) {
+    try {
+        const { id_modulo } = req.params;
+
+        const sql = `
+            SELECT l.id_login, lm.id_modulos, codigo_modulo, usuario
+            FROM login_modulo AS lm
+            LEFT JOIN modulos m ON m.id_modulos = lm.id_modulos
+            LEFT JOIN login l ON l.id_login = lm.id_login
+            WHERE lm.id_modulos = $1 AND lm.estado_act_dato = TRUE
+        `;
+
+        const result = await query(sql, [id_modulo]);
+
+        res.json(result.rows);
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Error obteniendo módulos por sucursal" });
+    }
+}
+
 
 /* export async function guardarSucursales(req: Request, res: Response) {
     try {
@@ -696,6 +719,8 @@ export async function guardarModulos(req: Request, res: Response) {
                 RETURNING *;
             `;
             params = [id_sucursal, codigo_modulo, descripcion];
+
+
         } else {
             // UPDATE
             sql = `
@@ -708,7 +733,19 @@ export async function guardarModulos(req: Request, res: Response) {
         }
 
         const result = await query(sql, params);
+        const modulo = result.rows[0];
 
+        try {
+          const io = getIO();    
+          if (!id_modulos) {
+            io.emit("nuevo_modulo", modulo); 
+            console.log("Socket enviado: nuevo_modulo");
+          }
+
+        } catch (error) {
+          console.error('Error emitiendo socket:', error);
+        }
+        
         res.json({
             ok: true,
             message: !id_modulos ? "Módulo creado correctamente." : "Módulo actualizado correctamente.",

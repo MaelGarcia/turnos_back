@@ -135,8 +135,6 @@ export async function turno_finalizar(req: Request, res: Response) {
 
     try {
           const io = getIO();    
-    
-          console.log("Estoy finalizado")
           io.emit('turno_estado', {
                 id_sucursal: turno.id_sucursal,
                 id_turnos: turno.id_turnos,
@@ -171,6 +169,85 @@ export async function turno_finalizar(req: Request, res: Response) {
     });
   } catch (error) {
     console.error('Error en turno_finalizar:', error);
+    return res.status(500).json({ message: 'Error interno del servidor' });
+  }
+}
+
+export async function turno_cancelar(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ message: 'ID de turno inválido' });
+    }
+
+    const idTurno = Number(id);
+
+    const sql = `
+      UPDATE turnos
+      SET estado = 'cancelado',
+          hora_finalizacion = NOW()
+      WHERE id_turnos = $1
+        AND estado = 'asignado'
+      RETURNING 
+        id_turnos,
+        id_sucursal,
+        numero_turno,
+        celular,
+        estado,
+        id_modulos,
+        hora_creacion,
+        hora_llamado,
+        hora_finalizacion
+    `;
+
+    const { rows } = await query(sql, [idTurno]);
+      
+    if (rows.length === 0) {
+      // o no existe, o no estaba en estado "asignado"
+      return res.status(409).json({
+        message: 'No se pudo cancelar: el turno no existe o no está asignado',
+      });
+    }
+
+    const turno = rows[0];
+
+    try {
+          const io = getIO();    
+          io.emit('turno_estado', {
+                id_sucursal: turno.id_sucursal,
+                id_turnos: turno.id_turnos,
+                numero_turno: turno.numero_turno,
+                codigo_seguridad: turno.codigo_seguridad,
+                estado: 'cancelado',
+              });
+        
+         
+    }catch(error){
+      console.error('Error emitiendo socket:', error);
+    }
+
+    // Enviar WhatsApp de finalización (si tenemos celular)
+    if (turno.celular) {
+      const mensaje = `Hola, tu turno ${turno.numero_turno} ha sido cancelado. Gracias por utilizar nuestros servicios.`;
+
+      try {
+        await axios.post(`${BOT_URL}/v1/messages`, {
+          number: turno.celular,
+          message: mensaje,
+        });
+      } catch (err) {
+        console.error('Error enviando WhatsApp de cancelacion:', err);
+        // No lanzamos 500, la finalización en BD ya se hizo
+      }
+    }
+
+    return res.status(200).json({
+      message: 'Turno cancelado',
+      turno,
+    });
+  } catch (error) {
+    console.error('Error en turno_cancelar user:', error);
     return res.status(500).json({ message: 'Error interno del servidor' });
   }
 }

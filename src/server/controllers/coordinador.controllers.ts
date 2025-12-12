@@ -560,7 +560,7 @@ export async function sucursal_get_modulos(req: Request, res: Response) {
       LEFT JOIN turnos t
         ON t.id_modulos = m.id_modulos
        AND t.estado = 'atendiendo'
-      WHERE m.id_sucursal = $1
+      WHERE m.id_sucursal = $1 AND m.estado_act_dato = TRUE
       ORDER BY m.id_modulos;
     `;
 

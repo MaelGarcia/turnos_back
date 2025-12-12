@@ -1,26 +1,16 @@
 import { EVENTS, addKeyword } from '@builderbot/bot'
-import type { BotContext, TFlow } from '@builderbot/bot/dist/types'
+import axios from "axios";
 
+const API = process.env.POSTGRES_DB_HOST;
+const PORT = process.env.EXPRESS_PORT;
 const curpTimers = new Map<string, NodeJS.Timeout>();
+const IPWHITELIS = process.env.IP_WHITELIST;
 
 function getKey(ctx: any) {
-  // normalmente ctx.from o ctx.key.remoteJid
   return ctx.from;
 }
 
 export type MotivoInvalido = 'formato' | 'fecha'
-
-/* export interface RFCResultOk {
-  ok: true
-  tipo: TipoRFC
-  rfc: string
-}
-
-export interface RFCResultError {
-  ok: false
-  motivo: MotivoInvalido
-} */
-
 
 export type CURPResult = {
   ok: boolean;
@@ -180,4 +170,45 @@ export function getFechaHoyMexico(): string {
   // Convertir a "YYYY-MM-DD" para PostgreSQL
   const [dia, mes, anio] = fechaMexicoStr.split('/');
   return `${anio}-${mes}-${dia}`;
+}
+
+export const hayDisponibilidadLicencias = async (): Promise<boolean> => {
+  try {
+    const conexion = `http://${API}:${PORT}/api/private/horario`
+    // Llamada interna al backend
+    const { data } = await axios.get(conexion);
+
+    const horaInicio = data.hora_inicio; // Ej: "15:00:00"
+    const horaFin = data.hora_fin;       // Ej: "18:00:00"
+
+    // Convertir a minutos
+    const [hiH, hiM] = horaInicio.split(":").map(Number);
+    const [hfH, hfM] = horaFin.split(":").map(Number);
+
+    const desde = hiH * 60 + hiM;
+    const hasta = hfH * 60 + hfM;
+
+    const ahora = new Date();
+    const actual = ahora.getHours() * 60 + ahora.getMinutes();
+
+    console.log("Horario BD:", horaInicio, horaFin);
+    console.log("Actual:", actual, "desde:", desde, "hasta:", hasta);
+    console.log();
+    
+    return actual >= desde && actual <= hasta;
+
+  } catch (err) {
+    console.error("Error obteniendo horario:", err);
+    return false;
+  }
+};
+
+export const allowLocalhostOnly = (req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress
+
+  if (ip === '::1' || ip === '127.0.0.1' || ip === 'localhost' || ip === `${IPWHITELIS}`) {
+    return next()
+  }
+
+  return res.status(403).json({ error: "Acceso prohibido" })
 }

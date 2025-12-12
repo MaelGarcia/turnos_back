@@ -1,10 +1,12 @@
 import { Router } from 'express'
-import {scanQr, crearConfig,getConfigHistorial,getConfigActual, u_estatus_suc,actualizarUsuario,crearUsuario,obtenerUsuarioslistado,eliminarModulos, guardarModulos,eliminarSucursal,guardarSucursales, obtenerModulosPorSucursal,obtenerTurnos, obtenerSucursales, obtenerModulos, obtenerUsuarios } from '../controllers/admin.controllers'
+import {obtenerUsuarioPorModulos,scanQr, crearConfig,getConfigHistorial,getConfigActual, u_estatus_suc,actualizarUsuario,crearUsuario,obtenerUsuarioslistado,eliminarModulos, guardarModulos,eliminarSucursal,guardarSucursales, obtenerModulosPorSucursal,obtenerTurnos, obtenerSucursales, obtenerModulos, obtenerUsuarios } from '../controllers/admin.controllers'
 const router = Router()
 
 router.get('/admin/turnos', obtenerTurnos);
 
 router.get('/admin/modulos/:id_sucursal', obtenerModulosPorSucursal);
+
+router.get('/admin/usuarios/:id_modulo', obtenerUsuarioPorModulos);
 
 router.get('/admin/sucursales', obtenerSucursales);
 
